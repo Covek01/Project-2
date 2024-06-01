@@ -19,7 +19,7 @@ def read_teams_create_dict(filepath):
 
 
 if __name__ == '__main__':
-    # teams_dict = read_teams_create_dict('./Data/')
+    teams_dict = read_teams_create_dict('./dims/teams.csv')
 
     spark = SparkSession.builder \
         .master('local[1]') \
@@ -60,7 +60,7 @@ if __name__ == '__main__':
         "CASE WHEN data[23] = 'null' THEN NULL ELSE CAST(data[23] AS DOUBLE) END as soil_temperature",
         "data[24] as team_id",
     )
-    # parsed_df = parsed_df.withColumn('team_id', teams_dict[parsed_df.team_id])
+    parsed_df = parsed_df.withColumn('team_id', teams_dict[parsed_df.team_id])
 
     window_spec = Window.partitionBy("team_id").orderBy("timestamp")
     parsed_df1 = parsed_df.withColumn(
@@ -69,7 +69,7 @@ if __name__ == '__main__':
         "temperature_change", col("temperature") - col("prev_temperature"))
 
     query = parsed_df1.writeStream \
-        .outputMode("append") \
+        .outputMode("complete") \
         .format("console") \
         .option("truncate", False) \
         .start()
