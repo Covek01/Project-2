@@ -1,7 +1,9 @@
 from pyspark.sql import SparkSession
 import csv
-from pyspark.sql.functions import col, expr, lag
+from pyspark.sql.functions import col, expr, lag, udf,window
+from pyspark.sql import functions as F
 from pyspark.sql.window import Window
+from pyspark.sql.types import StringType
 
 HOST = 'localhost'
 PORT = 9999
@@ -34,7 +36,7 @@ if __name__ == '__main__':
 
     parsed_df = socket_df.selectExpr("split(value, ',') AS data")
     parsed_df = parsed_df.selectExpr(
-        "data[0] as timestamp",
+        "data[0] as ts",
         "CASE WHEN data[1] = 'null' THEN NULL ELSE CAST(data[1] AS DOUBLE) END as temperature",
         "CASE WHEN data[2] = 'null' THEN NULL ELSE CAST(data[2] AS DOUBLE) END as humidity",
         "CASE WHEN data[3] = 'null' THEN NULL ELSE CAST(data[3] AS DOUBLE) END as dew_point",
@@ -60,18 +62,29 @@ if __name__ == '__main__':
         "CASE WHEN data[23] = 'null' THEN NULL ELSE CAST(data[23] AS DOUBLE) END as soil_temperature",
         "data[24] as team_id",
     )
-    parsed_df = parsed_df.withColumn('team_id', teams_dict[parsed_df.team_id])
+    parsed_df=parsed_df.withColumn('ts',F.to_timestamp("ts","yyyy-MM-dd'T'HH:mm:ss"))
+  
+    parsed_df=(parsed_df.withColumn('team_id',col('team_id').cast('string')).replace(teams_dict,subset=['team_id']))
 
-    window_spec = Window.partitionBy("team_id").orderBy("timestamp")
-    parsed_df1 = parsed_df.withColumn(
-        "prev_temperature", lag("temperature").over(window_spec))
-    parsed_df1 = parsed_df1.withColumn(
-        "temperature_change", col("temperature") - col("prev_temperature"))
+
+    # w = Window.partitionBy("team_id").orderBy('ts')
+
+
+    # parsed_df1 = parsed_df.withColumn(
+        # "prev_temperature", lag(parsed_df.temperature).over(w))
+    
+
+    # parsed_df1 = parsed_df1.withColumn(
+    #     "temperature_change", col("temperature") - col("temperature"))
+    windowSpec = Window.partitionBy("team_id").orderBy("ts")
+
+    parsed_df1 = parsed_df.withWatermark('ts','10 seconds').withColumn("prev_temperature", lag("temperature",20,0).over(windowSpec))
+
+
 
     query = parsed_df1.writeStream \
-        .outputMode("complete") \
+        .outputMode("append") \
         .format("console") \
         .option("truncate", False) \
         .start()
-
     query.awaitTermination()
