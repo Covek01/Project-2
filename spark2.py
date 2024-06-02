@@ -106,7 +106,6 @@ if __name__ == '__main__':
              F.avg('snowfall').alias('avg_snowfall'),
              F.avg('snow_depth').alias('avg_snowdepth'),
              F.max('snow_depth').alias('max_snow_depth'),
-             F.collect_set('weather_code').alias('weather_codes'),
              F.avg('cloud_coverage').alias('avg_cloud_coverage'),
              F.avg('wind_speed_10m').alias('avg_wind_speed_10m'),
              F.avg('wind_speed_100m').alias('avg_wind_speed_100m'),
@@ -114,18 +113,22 @@ if __name__ == '__main__':
              F.avg('wind_direction_100m').alias('avg_wind_direction_100m'),
              F.avg('wind_gusts_10m').alias('avg_wind_gusts_10m'),
              F.avg('soil_temperature').alias('soil_temperature'))
+    
+    daily_df=daily_df.withColumn('window_start',daily_df.window.start)
+    daily_df=daily_df.withColumn('window_end', daily_df.window.end)
+    daily_df=daily_df.drop('window')
 
-    block_sz = 1024
     query = daily_df.writeStream\
-        .outputMode("append")\
-        .format("parquet")\
-        .option("parquet.block.size", block_sz)\
+        .format("csv")\
+        .trigger(processingTime='10 seconds')\
         .option("checkpointLocation", "./checkpoint")\
-        .start("./output")\
+        .option('path', './output')\
+        .outputMode("append")\
+        .start()\
         .awaitTermination()
     # query = daily_df.writeStream \
     #     .outputMode("complete") \
     #     .format("console") \
     #     .option("truncate", False) \
     #     .start()
-    query.awaitTermination()
+    # query.awaitTermination()
