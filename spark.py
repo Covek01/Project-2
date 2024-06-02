@@ -1,10 +1,10 @@
 from pyspark.sql import SparkSession
 import csv
-from pyspark.sql.functions import col, expr, lag, udf,window
+from pyspark.sql.functions import col, expr, lag, udf, window, avg, last, sum
 from pyspark.sql import functions as F
 from pyspark.sql.window import Window
-from pyspark.sql.types import StringType
-
+from pyspark.sql.types import *
+from pyspark.sql.streaming import state
 HOST = 'localhost'
 PORT = 9999
 FORMAT = 'socket'
@@ -35,6 +35,7 @@ if __name__ == '__main__':
         .load()
 
     parsed_df = socket_df.selectExpr("split(value, ',') AS data")
+ 
     parsed_df = parsed_df.selectExpr(
         "data[0] as ts",
         "CASE WHEN data[1] = 'null' THEN NULL ELSE CAST(data[1] AS DOUBLE) END as temperature",
@@ -62,28 +63,30 @@ if __name__ == '__main__':
         "CASE WHEN data[23] = 'null' THEN NULL ELSE CAST(data[23] AS DOUBLE) END as soil_temperature",
         "data[24] as team_id",
     )
-    parsed_df=parsed_df.withColumn('ts',F.to_timestamp("ts","yyyy-MM-dd'T'HH:mm:ss"))
-  
-    parsed_df=(parsed_df.withColumn('team_id',col('team_id').cast('string')).replace(teams_dict,subset=['team_id']))
 
 
-    # w = Window.partitionBy("team_id").orderBy('ts')
+    # parsed_df = parsed_df.filter(col('temperature').rlike('^-?\\d+(\\.\\d+)?$'))
 
+    parsed_df = parsed_df.withColumn(
+        'ts', F.to_timestamp("ts", "yyyy-MM-dd'T'HH:mm:ss"))
 
-    # parsed_df1 = parsed_df.withColumn(
-        # "prev_temperature", lag(parsed_df.temperature).over(w))
-    
+    parsed_df = (parsed_df.withColumn('team_id', col('team_id').cast(
+        'string')).replace(teams_dict, subset=['team_id']))
 
-    # parsed_df1 = parsed_df1.withColumn(
-    #     "temperature_change", col("temperature") - col("temperature"))
-    windowSpec = Window.partitionBy("team_id").orderBy("ts")
+    parsed_df.createOrReplaceTempView("updates")    
+    another_df=spark.sql("select ts,temperature,team_id from updates")
 
-    parsed_df1 = parsed_df.withWatermark('ts','10 seconds').withColumn("prev_temperature", lag("temperature",20,0).over(windowSpec))
+    # w=Window().orderBy('ts').partitionBy('team_id')
+    # parsed_df1=another_df.withColumn('dif',lag('temperature',20,0).over(w))
+    parsed_df.printSchema()
+    # parsed_df1=parsed_df.withColumn('diference',lag('temperature',20,0).over(window('ts','5 seconds','5 seconds')))
+    # parsed_df1=parsed_df.withColumn('diference',window('ts','5 seconds','5 seconds').agg(sum('temperature')))
+    # parsed_df1=parsed_df.withColumn('diference',parsed_df.groupBy(window('ts','5 seconds')).agg(sum(parsed_df.temperature).alias('temp_diff')))
+    windowed_df=parsed_df.withWatermark('ts','2 hours').groupBy(window(parsed_df.ts,'2 hours','1 hour'),parsed_df.team_id,parsed_df.temperature).agg((2*avg('temperature')-2*parsed_df.temperature).alias('sumirano'))
+    # parsed_df=parsed_df.withColumn('test',)
 
-
-
-    query = parsed_df1.writeStream \
-        .outputMode("append") \
+    query = windowed_df.writeStream \
+        .outputMode("complete") \
         .format("console") \
         .option("truncate", False) \
         .start()

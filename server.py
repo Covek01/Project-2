@@ -76,6 +76,7 @@ def handle_client(client_socket):
             dataWestHamUnited = west_ham_united.readline()
             dataWolverhamptonWanderers = wolverhampton_wanderers.readline()
 
+            print(dataArsenal.encode())
             client_socket.send(dataArsenal.encode())
             client_socket.send(dataAstonVilla.encode())
             client_socket.send(dataBournemouth.encode())
