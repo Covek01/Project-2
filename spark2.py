@@ -118,9 +118,9 @@ if __name__ == '__main__':
     daily_df=daily_df.withColumn('window_end', daily_df.window.end)
     daily_df=daily_df.drop('window')
 
-    query = daily_df.writeStream\
+    query = daily_df.coalesce(1).writeStream\
         .format("csv")\
-        .trigger(processingTime='10 seconds')\
+        .trigger(processingTime='80 seconds')\
         .option("checkpointLocation", "./checkpoint")\
         .option('path', './output')\
         .outputMode("append")\
