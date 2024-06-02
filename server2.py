@@ -44,7 +44,8 @@ def handle_client(client_socket, path):
                 break
             
             time.sleep(5)
-
+    except:
+        print('ERROR WHILE SENDING ON SOCKET')
     finally:
         arsenal.close()
 
