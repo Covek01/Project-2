@@ -27,25 +27,23 @@ if __name__ == '__main__':
         .master('local[1]') \
         .appName('FootballWeatherDataStreaming') \
         .getOrCreate()
-
-
+    spark.conf.set("spark.sql.session.timeZone", "UTC")
 
     socket_df = spark.readStream \
         .format(FORMAT) \
         .option('host', HOST) \
         .option('port', PORT) \
         .load()
-    
-    for i in range(1,len(teams_dict.keys())):
-        temp_df=spark.readStream\
-        .format(FORMAT)\
-        .option('host',HOST)\
-        .option('port',PORT+i)\
-        .load()
-        socket_df=socket_df.unionByName(temp_df,allowMissingColumns=True)
+    for i in range(1, len(teams_dict.keys())):
+        temp_df = spark.readStream\
+            .format(FORMAT)\
+            .option('host', HOST)\
+            .option('port', PORT+i)\
+            .load()
+        socket_df = socket_df.unionByName(temp_df, allowMissingColumns=True)
 
     parsed_df = socket_df.selectExpr("split(value, ',') AS data")
- 
+
     parsed_df = parsed_df.selectExpr(
         "data[0] as ts",
         "CASE WHEN data[1] = 'null' THEN NULL ELSE CAST(data[1] AS DOUBLE) END as temperature",
@@ -68,14 +66,18 @@ if __name__ == '__main__':
         "CASE WHEN data[18] = 'null' THEN NULL ELSE CAST(data[18] AS DOUBLE) END as wind_speed_10m",
         "CASE WHEN data[19] = 'null' THEN NULL ELSE CAST(data[19] AS DOUBLE) END as wind_speed_100m",
         "CASE WHEN data[20] = 'null' THEN NULL ELSE CAST(data[20] AS INT) END as wind_direction_10m",
-        "CASE WHEN data[21] = 'null' THEN NULL ELSE CAST(data[21] AS INT) END as wind_direcction_100m",
+        "CASE WHEN data[21] = 'null' THEN NULL ELSE CAST(data[21] AS INT) END as wind_direction_100m",
         "CASE WHEN data[22] = 'null' THEN NULL ELSE CAST(data[22] AS DOUBLE) END as wind_gusts_10m",
         "CASE WHEN data[23] = 'null' THEN NULL ELSE CAST(data[23] AS DOUBLE) END as soil_temperature",
         "data[24] as team_id",
     )
 
-
     # parsed_df = parsed_df.filter(col('temperature').rlike('^-?\\d+(\\.\\d+)?$'))
+    parsed_df = parsed_df.drop('dew_point')
+    parsed_df = parsed_df.drop('pressure_sea_level')
+    parsed_df = parsed_df.drop('pressure_surface')
+    parsed_df = parsed_df.drop('evaporation')
+    parsed_df = parsed_df.drop('vapour_pressure_deficit')
 
     parsed_df = parsed_df.withColumn(
         'ts', F.to_timestamp("ts", "yyyy-MM-dd'T'HH:mm:ss"))
@@ -84,17 +86,46 @@ if __name__ == '__main__':
         'string')).replace(teams_dict, subset=['team_id']))
 
 ###################
-    parsed_df.createOrReplaceTempView("updates")    
-    another_df=spark.sql("select ts,temperature,team_id from updates")
-###################
-
-
+    parsed_df.createOrReplaceTempView("updates")
+    another_df = spark.sql("select ts,temperature,team_id from updates")
     parsed_df.printSchema()
-    windowed_df=parsed_df.withWatermark('ts','2 hours').groupBy(window(parsed_df.ts,'2 hours','1 hour'),parsed_df.team_id).agg(avg('temperature').alias('sumirano'))
+###################
+    parsed_df=parsed_df.withWatermark('ts','24 hours')
+    daily_df = parsed_df.groupBy(window(
+        parsed_df.ts, '24 hours', startTime='0 hours'), parsed_df.team_id)\
+        .agg(F.avg('temperature').alias('avg_temp'),
+             F.max('temperature').alias('max_temp'),
+             F.min('temperature').alias('min_temp'),
+             F.avg('humidity').alias('avg_humidity'),
+             F.avg('apparent_temperature').alias('avg_apparent_temp'),
+             F.max('apparent_temperature').alias('max_apparent_temp'),
+             F.min('apparent_temperature').alias('min_apparent_temp'),
+             F.avg('precipitation').alias('avg_precipitation'),
+             F.max('precipitation').alias('max_precipitation'),
+             F.avg('rain').alias('avg_rain'),
+             F.avg('snowfall').alias('avg_snowfall'),
+             F.avg('snow_depth').alias('avg_snowdepth'),
+             F.max('snow_depth').alias('max_snow_depth'),
+             F.collect_set('weather_code').alias('weather_codes'),
+             F.avg('cloud_coverage').alias('avg_cloud_coverage'),
+             F.avg('wind_speed_10m').alias('avg_wind_speed_10m'),
+             F.avg('wind_speed_100m').alias('avg_wind_speed_100m'),
+             F.avg('wind_direction_10m').alias('avg_wind_direction_10m'),
+             F.avg('wind_direction_100m').alias('avg_wind_direction_100m'),
+             F.avg('wind_gusts_10m').alias('avg_wind_gusts_10m'),
+             F.avg('soil_temperature').alias('soil_temperature'))
 
-    query = windowed_df.writeStream \
-        .outputMode("complete") \
-        .format("console") \
-        .option("truncate", False) \
-        .start()
+    block_sz = 1024
+    query = daily_df.writeStream\
+        .outputMode("append")\
+        .format("parquet")\
+        .option("parquet.block.size", block_sz)\
+        .option("checkpointLocation", "./checkpoint")\
+        .start("./output")\
+        .awaitTermination()
+    # query = daily_df.writeStream \
+    #     .outputMode("complete") \
+    #     .format("console") \
+    #     .option("truncate", False) \
+    #     .start()
     query.awaitTermination()
