@@ -77,8 +77,8 @@ if __name__ == '__main__':
     # parsed_df1 = parsed_df1.withColumn(
     #     "temperature_change", col("temperature") - col("temperature"))
     windowSpec = Window.partitionBy("team_id").orderBy("ts")
-
-    parsed_df1 = parsed_df.withWatermark('ts','10 seconds').withColumn("prev_temperature", lag("temperature",20,0).over(windowSpec))
+    
+    parsed_df1 = parsed_df.withColumn("prev_temperature", lag("temperature", 1).over(windowSpec))
 
 
 
