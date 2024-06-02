@@ -92,7 +92,15 @@ if __name__ == '__main__':
     parsed_df.printSchema()
     windowed_df=parsed_df.withWatermark('ts','2 hours').groupBy(window(parsed_df.ts,'2 hours','1 hour'),parsed_df.team_id).agg(avg('temperature').alias('sumirano'))
 
-    query = windowed_df.writeStream \
+    # safe_df = parsed_df.filter(parsed_df.snow_depth < 0.03
+    #                             & parsed_df.soil_temperature > 1
+    #                             & parsed_df.wind_gusts_10m < 65
+    #                             & parsed_df. wind_speed_10m < 40
+    #                             & parsed_df.apparent_temperature > 0
+    #                             & parsed_df.apparent_temperature < 33
+    #                             & parsed_df.precipitation >= 4)
+
+    query = parsed_df.writeStream \
         .outputMode("complete") \
         .format("console") \
         .option("truncate", False) \
