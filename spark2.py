@@ -111,7 +111,6 @@ if __name__ == '__main__':
              F.avg('snowfall').alias('avg_snowfall'),
              F.avg('snow_depth').alias('avg_snowdepth'),
              F.max('snow_depth').alias('max_snow_depth'),
-             F.collect_set('weather_code').alias('weather_codes'),
              F.avg('cloud_coverage').alias('avg_cloud_coverage'),
              F.avg('wind_speed_10m').alias('avg_wind_speed_10m'),
              F.avg('wind_speed_100m').alias('avg_wind_speed_100m'),
@@ -119,6 +118,14 @@ if __name__ == '__main__':
              F.avg('wind_direction_100m').alias('avg_wind_direction_100m'),
              F.avg('wind_gusts_10m').alias('avg_wind_gusts_10m'),
              F.avg('soil_temperature').alias('soil_temperature'))
+    
+    daily_df=daily_df.withColumn('window_start',daily_df.window.start)
+    daily_df=daily_df.withColumn('window_end', daily_df.window.end)
+    daily_df=daily_df.drop('window')
+
+    query = daily_df.coalesce(1).writeStream\
+        .format("csv")\
+        .trigger(processingTime='80 seconds')\
     
 
     # def calculate_formula2(snow, soil, windspeed, windgust, atemp, precipitation):
@@ -200,13 +207,16 @@ if __name__ == '__main__':
         .format("parquet")\
         .option("parquet.block.size", block_sz)\
         .option("checkpointLocation", "./checkpoint")\
-        .start("./output")\
+        .option('path', './output')\
+        .outputMode("append")\
+        .start()\
         .awaitTermination()
     # query = daily_df.writeStream \
     #     .outputMode("complete") \
     #     .format("console") \
     #     .option("truncate", False) \
     #     .start()
+    # query.awaitTermination()
     windowed_df=parsed_df.withWatermark('ts','2 hours').groupBy(window(parsed_df.ts,'2 hours','1 hour'),parsed_df.team_id).agg(avg('temperature').alias('sumirano'))
 
 
