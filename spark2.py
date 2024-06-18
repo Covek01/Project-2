@@ -201,11 +201,9 @@ if __name__ == '__main__':
     queryFilter.awaitTermination()
 
 
-    block_sz = 1024
-    query = daily_df.writeStream\
-        .outputMode("append")\
-        .format("parquet")\
-        .option("parquet.block.size", block_sz)\
+    query = daily_df.coalesce(1).writeStream\
+        .format("csv")\
+        .trigger(processingTime='80 seconds')\
         .option("checkpointLocation", "./checkpoint")\
         .option('path', './output')\
         .outputMode("append")\
@@ -217,6 +215,6 @@ if __name__ == '__main__':
     #     .option("truncate", False) \
     #     .start()
     # query.awaitTermination()
-    windowed_df=parsed_df.withWatermark('ts','2 hours').groupBy(window(parsed_df.ts,'2 hours','1 hour'),parsed_df.team_id).agg(avg('temperature').alias('sumirano'))
 
+    windowed_df=parsed_df.withWatermark('ts','2 hours').groupBy(window(parsed_df.ts,'2 hours','1 hour'),parsed_df.team_id).agg(avg('temperature').alias('sumirano'))
 
