@@ -128,16 +128,7 @@ if __name__ == '__main__':
         .trigger(processingTime='80 seconds')\
     
 
-    # def calculate_formula2(snow, soil, windspeed, windgust, atemp, precipitation):
-    #     factor_temp = abs(((MAX_ATEMP + MIN_ATEMP) / 2 - atemp)) / (MAX_ATEMP - MIN_ATEMP)
-    #     factor_snow = snow / MAX_SNOW_DEPTH
-    #     factor_soil = abs(((MAX_SOIL_TEMPERATURE + MIN_SOIL_TEMPERATURE) / 2 - soil)) / (MAX_SOIL_TEMPERATURE - MIN_SOIL_TEMPERATURE)
-    #     windspeed_factor = windspeed / MAX_WIND_SPEED
-    #     windgust_factor = windgust / MAX_WIND_GUSTS
-    #     precipitation_factor = precipitation / MAX_PRECIPITATION
 
-    #     return factor_temp + factor_snow + factor_soil + windspeed_factor + windgust_factor + precipitation_factor <= 3
-    # calculate_formula_udf = udf(calculate_formula2, BooleanType)
 
     unsafe_df = parsed_df.filter(
         (parsed_df.snow_depth >= MAX_SNOW_DEPTH) |
@@ -150,24 +141,6 @@ if __name__ == '__main__':
         (parsed_df.precipitation >= MAX_PRECIPITATION)
     )
 
-    # parsed_df_with_safe = parsed_df.withColumn('safe_to_play', (when(
-    #                             (parsed_df.snow_depth >= MAX_SNOW_DEPTH) |
-    #                             (parsed_df.soil_temperature <= MIN_SOIL_TEMPERATURE) |
-    #                             (parsed_df.wind_gusts_10m > MAX_WIND_GUSTS) |
-    #                             (parsed_df.wind_speed_10m > MAX_WIND_SPEED) |
-    #                             (parsed_df.apparent_temperature <= MAX_ATEMP) |
-    #                             (parsed_df.apparent_temperature > MIN_ATEMP) |
-    #                             (parsed_df.precipitation >= MAX_PRECIPITATION), False)
-    #                             .when(calculate_formula_udf(
-    #                                 parsed_df.snow_depth,
-    #                                 parsed_df.soil_temperature,
-    #                                 parsed_df.wind_speed_10m,
-    #                                 parsed_df.wind_gusts_10m,
-    #                                 parsed_df.apparent_temperature,
-    #                                 parsed_df.precipitation
-    #                             ), False)
-    #                             .otherwise(True))
-    #                         )
     
     parsed_df2 = parsed_df.withColumn('safe_to_play', 
         (when(
@@ -192,23 +165,36 @@ if __name__ == '__main__':
 
 
 
-    queryFilter = parsed_df2.writeStream \
-        .outputMode("append") \
-        .format("console") \
-        .option("truncate", False) \
+    queryFilter = parsed_df2.coalesce(1).writeStream\
+        .format("csv")\
+        .trigger(processingTime='80 seconds')\
+        .option("checkpointHours", "./checkpoint_hours")\
+        .option('path', './output_hours')\
+        .outputMode("append")\
+        .start()
+        
+    queryUnsafe = unsafe_df.coalesce(1).writeStream\
+        .format("csv")\
+        .trigger(processingTime='80 seconds')\
+        .option("checkpointUnsafe", "./checkpoint_unsafe")\
+        .option('path', './output_unsafe')\
+        .outputMode("append")\
         .start()
     
-    queryFilter.awaitTermination()
 
 
     query = daily_df.coalesce(1).writeStream\
         .format("csv")\
         .trigger(processingTime='80 seconds')\
-        .option("checkpointLocation", "./checkpoint")\
-        .option('path', './output')\
+        .option("checkpointLocation", "./checkpoint_daily")\
+        .option('path', './output_daily')\
         .outputMode("append")\
-        .start()\
-        .awaitTermination()
+        .start()
+        
+    
+    queryUnsafe.awaitTermination()
+    queryFilter.awaitTermination()
+    query.awaitTermination()
     # query = daily_df.writeStream \
     #     .outputMode("complete") \
     #     .format("console") \
